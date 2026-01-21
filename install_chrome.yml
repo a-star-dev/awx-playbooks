@@ -25,7 +25,7 @@
       when: ansible_os_family == "Debian"
 
   ####################################################################
-  # REMOVE ALL NON-APPROVED BROWSERS
+  # REMOVE NON-APPROVED BROWSERS
   ####################################################################
 
     - name: Remove Chromium (APT)
@@ -48,38 +48,30 @@
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
-    - name: Remove Chromium snap (if present)
+    - name: Remove Chromium snap
       command: snap remove chromium
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
-    - name: Remove Chromium flatpak (if present)
+    - name: Remove Chromium flatpak
       command: flatpak uninstall -y org.chromium.Chromium
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
   ####################################################################
-  # DESKTOP APPLICATION CLEANUP (ROOT CAUSE FIX)
+  # PRE-INSTALL DESKTOP CLEANUP (DEFENSIVE)
   ####################################################################
 
-    - name: Remove duplicate Chrome desktop application (system + users)
+    - name: Remove stale Chrome / Chromium desktop files (pre-install)
       file:
         path: "{{ item }}"
         state: absent
       loop:
         - /usr/share/applications/com.google.Chrome.desktop
-        - /home/*/.local/share/applications/com.google.Chrome.desktop
-      ignore_errors: yes
-      when: ansible_os_family == "Debian"
-
-    - name: Remove leftover Chromium desktop files
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
         - /usr/share/applications/chromium.desktop
         - /usr/share/applications/chromium-browser.desktop
         - /var/lib/snapd/desktop/applications/chromium_chromium.desktop
+        - /home/*/.local/share/applications/com.google.Chrome.desktop
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
@@ -107,10 +99,29 @@
       when: ansible_os_family == "Debian"
 
   ####################################################################
-  # GNOME FAVORITES FIX (NO YAML TRICKS)
+  # POST-INSTALL DESKTOP NORMALIZATION (CRITICAL FIX)
   ####################################################################
 
-    - name: Fix GNOME favorites – remove duplicate Chrome entry
+    - name: Remove duplicate Chrome desktop app created during install
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/share/applications/com.google.Chrome.desktop
+        - /home/*/.local/share/applications/com.google.Chrome.desktop
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Rebuild desktop application database (post-install)
+      command: update-desktop-database
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+  ####################################################################
+  # GNOME FAVORITES NORMALIZATION (PER USER)
+  ####################################################################
+
+    - name: Fix GNOME favorites – enforce single Chrome icon
       become: false
       shell: |
         CURRENT=$(gsettings get org.gnome.shell favorite-apps)
@@ -123,13 +134,4 @@
         - ansible_env.XDG_CURRENT_DESKTOP is defined
         - ansible_env.XDG_CURRENT_DESKTOP | regex_search("GNOME")
       ignore_errors: yes
-
-  ####################################################################
-  # FINALIZE
-  ####################################################################
-
-    - name: Rebuild desktop application database
-      command: update-desktop-database
-      ignore_errors: yes
-      when: ansible_os_family == "Debian"
 
