@@ -1,14 +1,14 @@
 ---
-- name: Install Google Chrome on Linux (Clean Install)
+- name: Install Google Chrome on Linux (Clean + Multi-user safe)
   hosts: all
   become: yes
   gather_facts: yes
 
   tasks:
 
-    # -------------------------------
-    # Debian / Ubuntu
-    # -------------------------------
+    # -------------------------------------------------
+    # Debian / Ubuntu - Install Chrome
+    # -------------------------------------------------
 
     - name: Install dependencies (Debian-based)
       apt:
@@ -37,38 +37,30 @@
         state: present
       when: ansible_os_family == "Debian"
 
-    # -------------------------------
+    # -------------------------------------------------
     # Cleanup duplicate Chrome sources
-    # -------------------------------
+    # -------------------------------------------------
 
-    - name: Remove snap chromium if present (prevents duplicate Chrome icons)
+    - name: Remove snap chromium if present (prevents duplicate icons)
       command: snap remove chromium
       when: ansible_os_family == "Debian"
       ignore_errors: yes
 
-    - name: Remove duplicate user Chrome desktop entry
-      file:
-        path: "/home/{{ ansible_user }}/.local/share/applications/google-chrome.desktop"
-        state: absent
+    # -------------------------------------------------
+    # Multi-user Chrome desktop cleanup
+    # -------------------------------------------------
+
+    - name: Find all Google Chrome desktop entries under /home
+      find:
+        paths: /home
+        patterns: google-chrome.desktop
+        recurse: yes
+      register: chrome_desktop_files
       when: ansible_os_family == "Debian"
 
-    # -------------------------------
-    # RHEL / CentOS / Rocky / Alma
-    # -------------------------------
-
-    - name: Add Google Chrome repository (RHEL-based)
-      yum_repository:
-        name: google-chrome
-        description: Google Chrome Repository
-        baseurl: http://dl.google.com/linux/chrome/rpm/stable/x86_64
-        gpgcheck: yes
-        gpgkey: https://dl.google.com/linux/linux_signing_key.pub
-        enabled: yes
-      when: ansible_os_family == "RedHat"
-
-    - name: Install Google Chrome (RHEL-based)
-      yum:
-        name: google-chrome-stable
-        state: present
-      when: ansible_os_family == "RedHat"
+    - name: Remove duplicate Google Chrome desktop entries for all users
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      lo
 
