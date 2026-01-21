@@ -1,1 +1,1 @@
-# awx-nginx-playbook
+# awx-playbooks
