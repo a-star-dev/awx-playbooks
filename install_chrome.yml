@@ -6,10 +6,6 @@
 
   tasks:
 
-    # -------------------------------------------------
-    # Debian / Ubuntu - Install Chrome
-    # -------------------------------------------------
-
     - name: Install dependencies (Debian-based)
       apt:
         name:
@@ -37,18 +33,10 @@
         state: present
       when: ansible_os_family == "Debian"
 
-    # -------------------------------------------------
-    # Cleanup duplicate Chrome sources
-    # -------------------------------------------------
-
     - name: Remove snap chromium if present (prevents duplicate icons)
       command: snap remove chromium
       when: ansible_os_family == "Debian"
       ignore_errors: yes
-
-    # -------------------------------------------------
-    # Multi-user Chrome desktop cleanup
-    # -------------------------------------------------
 
     - name: Find all Google Chrome desktop entries under /home
       find:
@@ -62,5 +50,24 @@
       file:
         path: "{{ item.path }}"
         state: absent
-      lo
+      loop: "{{ chrome_desktop_files.files }}"
+      when:
+        - ansible_os_family == "Debian"
+        - chrome_desktop_files.matched | int > 0
+
+    - name: Add Google Chrome repository (RHEL-based)
+      yum_repository:
+        name: google-chrome
+        description: Google Chrome Repository
+        baseurl: http://dl.google.com/linux/chrome/rpm/stable/x86_64
+        gpgcheck: yes
+        gpgkey: https://dl.google.com/linux/linux_signing_key.pub
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Install Google Chrome (RHEL-based)
+      yum:
+        name: google-chrome-stable
+        state: present
+      when: ansible_os_family == "RedHat"
 
