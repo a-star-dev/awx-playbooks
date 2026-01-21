@@ -1,45 +1,32 @@
 ---
-- name: Enforce single Google Chrome installation (GNOME-safe)
+- name: Enforce single Google Chrome installation (GNOME desktops)
   hosts: all
   become: yes
   gather_facts: yes
 
   vars:
-    allowed_browser: google-chrome-stable
+    chrome_package: google-chrome-stable
 
-  #####################################################################
-  # PREFLIGHT DETECTION
-  #####################################################################
   tasks:
 
-    - name: Preflight | Detect installed APT browsers
+  ####################################################################
+  # PREFLIGHT (INFO ONLY)
+  ####################################################################
+
+    - name: Preflight | Show existing Chrome / Chromium packages
       shell: dpkg -l | egrep -i "chrome|chromium" || true
-      register: apt_browsers
-      changed_when: false
-      when: ansible_os_family == "Debian"
-
-    - name: Preflight | Detect snap browsers
-      shell: snap list 2>/dev/null | egrep -i "chrome|chromium" || true
-      register: snap_browsers
-      changed_when: false
-      when: ansible_os_family == "Debian"
-
-    - name: Preflight | Detect flatpak browsers
-      shell: flatpak list 2>/dev/null | egrep -i "chrome|chromium" || true
-      register: flatpak_browsers
+      register: preflight_packages
       changed_when: false
       when: ansible_os_family == "Debian"
 
     - name: Preflight report
       debug:
-        msg:
-          - "APT: {{ apt_browsers.stdout | default('none') }}"
-          - "Snap: {{ snap_browsers.stdout | default('none') }}"
-          - "Flatpak: {{ flatpak_browsers.stdout | default('none') }}"
+        msg: "{{ preflight_packages.stdout | default('No Chrome/Chromium packages detected') }}"
+      when: ansible_os_family == "Debian"
 
-  #####################################################################
-  # ENFORCE SINGLE-BROWSER POLICY
-  #####################################################################
+  ####################################################################
+  # REMOVE ALL NON-APPROVED BROWSERS
+  ####################################################################
 
     - name: Remove Chromium (APT)
       apt:
@@ -61,21 +48,21 @@
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
-    - name: Remove Chromium snap
+    - name: Remove Chromium snap (if present)
       command: snap remove chromium
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
-    - name: Remove Chromium flatpak
+    - name: Remove Chromium flatpak (if present)
       command: flatpak uninstall -y org.chromium.Chromium
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
-  #####################################################################
-  # DESKTOP & APP CLEANUP (CRITICAL FIX)
-  #####################################################################
+  ####################################################################
+  # DESKTOP APPLICATION CLEANUP (ROOT CAUSE FIX)
+  ####################################################################
 
-    - name: Remove duplicate Chrome desktop application (GNOME)
+    - name: Remove duplicate Chrome desktop application (system + users)
       file:
         path: "{{ item }}"
         state: absent
@@ -85,20 +72,20 @@
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
-    - name: Remove leftover Chromium desktop entries
+    - name: Remove leftover Chromium desktop files
       file:
         path: "{{ item }}"
         state: absent
       loop:
-        - /usr/share/applications/chromium-browser.desktop
         - /usr/share/applications/chromium.desktop
+        - /usr/share/applications/chromium-browser.desktop
         - /var/lib/snapd/desktop/applications/chromium_chromium.desktop
       ignore_errors: yes
       when: ansible_os_family == "Debian"
 
-  #####################################################################
-  # INSTALL APPROVED BROWSER
-  #####################################################################
+  ####################################################################
+  # INSTALL APPROVED GOOGLE CHROME
+  ####################################################################
 
     - name: Add Google Chrome GPG key
       apt_key:
@@ -112,34 +99,34 @@
         state: present
       when: ansible_os_family == "Debian"
 
-    - name: Install Google Chrome (approved browser)
+    - name: Install Google Chrome (stable)
       apt:
-        name: "{{ allowed_browser }}"
+        name: "{{ chrome_package }}"
         state: present
         update_cache: yes
       when: ansible_os_family == "Debian"
 
-  #####################################################################
-  # GNOME FAVORITES FIX (PER-USER)
-  #####################################################################
+  ####################################################################
+  # GNOME FAVORITES FIX (NO YAML TRICKS)
+  ####################################################################
 
-    - name: Remove duplicate Chrome from GNOME favorites
+    - name: Fix GNOME favorites – remove duplicate Chrome entry
       become: false
       shell: |
-        gsettings set org.gnome.shell favorite-apps \
-        "$(gsettings get org.gnome.shell favorite-apps | \
-        sed "s/'com.google.Chrome.desktop', //; s/, 'com.google.Chrome.desktop'//; s/'com.google.Chrome.desktop'//")"
+        CURRENT=$(gsettings get org.gnome.shell favorite-apps)
+        CLEANED=$(echo "$CURRENT" | sed "s/'com.google.Chrome.desktop', //; s/, 'com.google.Chrome.desktop'//; s/'com.google.Chrome.desktop'//")
+        gsettings set org.gnome.shell favorite-apps "$CLEANED"
       environment:
         DISPLAY: ":0"
         XDG_RUNTIME_DIR: "/run/user/{{ ansible_uid }}"
       when:
         - ansible_env.XDG_CURRENT_DESKTOP is defined
-        - "'GNOME'" in ansible_env.XDG_CURRENT_DESKTOP
+        - ansible_env.XDG_CURRENT_DESKTOP | regex_search("GNOME")
       ignore_errors: yes
 
-  #####################################################################
+  ####################################################################
   # FINALIZE
-  #####################################################################
+  ####################################################################
 
     - name: Rebuild desktop application database
       command: update-desktop-database
