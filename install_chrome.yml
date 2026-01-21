@@ -1,0 +1,51 @@
+---
+- name: Install Google Chrome on Linux
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  tasks:
+
+    - name: Install dependencies (Debian-based)
+      apt:
+        name:
+          - wget
+          - gnupg
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Add Google Chrome GPG key (Debian-based)
+      apt_key:
+        url: https://dl.google.com/linux/linux_signing_key.pub
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Google Chrome repository (Debian-based)
+      apt_repository:
+        repo: "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Google Chrome (Debian-based)
+      apt:
+        name: google-chrome-stable
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Google Chrome repository (RHEL-based)
+      yum_repository:
+        name: google-chrome
+        description: Google Chrome Repository
+        baseurl: http://dl.google.com/linux/chrome/rpm/stable/x86_64
+        gpgcheck: yes
+        gpgkey: https://dl.google.com/linux/linux_signing_key.pub
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Install Google Chrome (RHEL-based)
+      yum:
+        name: google-chrome-stable
+        state: present
+      when: ansible_os_family == "RedHat"
+
