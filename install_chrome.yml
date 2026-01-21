@@ -1,73 +1,141 @@
 ---
-- name: Install Google Chrome on Linux (Clean + Multi-user safe)
+- name: Enforce single-browser policy (Google Chrome only)
   hosts: all
   become: yes
   gather_facts: yes
 
+  vars:
+    allowed_browser: google-chrome-stable
+
   tasks:
 
-    - name: Install dependencies (Debian-based)
-      apt:
-        name:
-          - wget
-          - gnupg
-        state: present
-        update_cache: yes
+  #####################################################################
+  # PREFLIGHT DETECTION
+  #####################################################################
+
+    - name: Preflight | Detect installed browser packages
+      shell: |
+        dpkg -l | egrep -i "chrome|chromium" || true
+      register: browser_packages
+      changed_when: false
       when: ansible_os_family == "Debian"
 
-    - name: Add Google Chrome GPG key (Debian-based)
+    - name: Preflight | Detect snap browsers
+      shell: snap list 2>/dev/null | egrep -i "chrome|chromium" || true
+      register: snap_browsers
+      changed_when: false
+      when: ansible_os_family == "Debian"
+
+    - name: Preflight | Detect flatpak browsers
+      shell: flatpak list 2>/dev/null | egrep -i "chrome|chromium" || true
+      register: flatpak_browsers
+      changed_when: false
+      when: ansible_os_family == "Debian"
+
+    - name: Preflight report
+      debug:
+        msg:
+          - "APT browsers: {{ browser_packages.stdout | default('none') }}"
+          - "Snap browsers: {{ snap_browsers.stdout | default('none') }}"
+          - "Flatpak browsers: {{ flatpak_browsers.stdout | default('none') }}"
+
+  #####################################################################
+  # ENFORCE SINGLE-BROWSER POLICY (AUTO-CLEAN)
+  #####################################################################
+
+    - name: Remove Chromium (APT)
+      apt:
+        name:
+          - chromium
+          - chromium-browser
+        state: absent
+        purge: yes
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Remove Chrome beta / unstable
+      apt:
+        name:
+          - google-chrome-beta
+          - google-chrome-unstable
+        state: absent
+        purge: yes
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Remove Chromium snap
+      command: snap remove chromium
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Remove Chromium flatpak
+      command: flatpak uninstall -y org.chromium.Chromium
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+  #####################################################################
+  # DESKTOP AUTO-CLEAN (EVERY RUN)
+  #####################################################################
+
+    - name: Remove system Chromium desktop entries
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/share/applications/chromium-browser.desktop
+        - /usr/share/applications/chromium.desktop
+        - /var/lib/snapd/desktop/applications/chromium_chromium.desktop
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Remove user Chrome/Chromium desktop entries
+      find:
+        paths: /home
+        patterns:
+          - google-chrome.desktop
+          - chromium*.desktop
+        recurse: yes
+      register: desktop_files
+      when: ansible_os_family == "Debian"
+
+    - name: Delete user desktop artifacts
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ desktop_files.files }}"
+      when:
+        - ansible_os_family == "Debian"
+        - desktop_files.matched | int > 0
+
+  #####################################################################
+  # INSTALL APPROVED BROWSER
+  #####################################################################
+
+    - name: Add Google Chrome GPG key
       apt_key:
         url: https://dl.google.com/linux/linux_signing_key.pub
         state: present
       when: ansible_os_family == "Debian"
 
-    - name: Add Google Chrome repository (Debian-based)
+    - name: Add Google Chrome repository
       apt_repository:
         repo: "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main"
         state: present
       when: ansible_os_family == "Debian"
 
-    - name: Install Google Chrome (Debian-based)
+    - name: Install Google Chrome (approved browser)
       apt:
-        name: google-chrome-stable
+        name: "{{ allowed_browser }}"
         state: present
+        update_cache: yes
       when: ansible_os_family == "Debian"
 
-    - name: Remove snap chromium if present (prevents duplicate icons)
-      command: snap remove chromium
-      when: ansible_os_family == "Debian"
+  #####################################################################
+  # FINALIZE (MENU CONSISTENCY)
+  #####################################################################
+
+    - name: Update desktop database
+      command: update-desktop-database
       ignore_errors: yes
-
-    - name: Find all Google Chrome desktop entries under /home
-      find:
-        paths: /home
-        patterns: google-chrome.desktop
-        recurse: yes
-      register: chrome_desktop_files
       when: ansible_os_family == "Debian"
-
-    - name: Remove duplicate Google Chrome desktop entries for all users
-      file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ chrome_desktop_files.files }}"
-      when:
-        - ansible_os_family == "Debian"
-        - chrome_desktop_files.matched | int > 0
-
-    - name: Add Google Chrome repository (RHEL-based)
-      yum_repository:
-        name: google-chrome
-        description: Google Chrome Repository
-        baseurl: http://dl.google.com/linux/chrome/rpm/stable/x86_64
-        gpgcheck: yes
-        gpgkey: https://dl.google.com/linux/linux_signing_key.pub
-        enabled: yes
-      when: ansible_os_family == "RedHat"
-
-    - name: Install Google Chrome (RHEL-based)
-      yum:
-        name: google-chrome-stable
-        state: present
-      when: ansible_os_family == "RedHat"
 
